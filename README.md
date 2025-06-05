@@ -39,9 +39,6 @@ python pi.py -i 1000000 --with-process -p 4
 
 # Multiprocessing pool (8 workers)
 python pi.py -i 1000000 --pool 8
-
-# Distributed across hosts (2 hosts, 500k terms each)
-python pi.py -s 2 --seg-size 500000 --hosts host1,host2
 ```
 
 ## Arguments
@@ -55,15 +52,25 @@ python pi.py -s 2 --seg-size 500000 --hosts host1,host2
 | `--with-thread`      | Use producer–consumer threading                                       |
 | `--with-process`     | Use producer–consumer multiprocessing                                 |
 | `--pool`             | Use multiprocessing pool (specify number of workers)                  |
-| `--hosts`            | Comma-separated list of remote hosts (requires `-s` and `--seg-size`) |
-| `-s`, `--segments`   | Number of segments for manual or distributed mode                     |
-| `--seg-size`         | Size of each segment (for manual or distributed mode)                 |
 
 ## Architecture
 
 The project follows a modular design. Below is a simplified PlantUML diagram of the producer–consumer architecture:
 
-[![](https://img.plantuml.biz/plantuml/svg/SoWkIImgAStDuUKg038oapCB4lDA57mJC_DGHG9BKqjJKOMSy_EAItDJYmon2_lnSe6CKT2rWsYsKaZDAmGnD8fJqtDJWIfB4ekpYpLvkU068QbDIKLHYwuAPBAL0jZQn1o5ejJYqfmIX18_eWpomssGGsfU2Z1G0000)](https://editor.plantuml.com/uml/SoWkIImgAStDuUKg038oapCB4lDA57mJC_DGHG9BKqjJKOMSy_EAItDJYmon2_lnSe6CKT2rWsYsKaZDAmGnD8fJqtDJWIfB4ekpYpLvkU068QbDIKLHYwuAPBAL0jZQn1o5ejJYqfmIX18_eWpomssGGsfU2Z1G0000)
+```plantuml
+@startuml
+participant Main
+participant Queue
+participant Consumer1
+participant ConsumerN
+Main -> Queue: enqueue(segment tasks)
+Consumer1 -> Queue: dequeue(segment)
+Consumer1 -> Main: partial result
+ConsumerN -> Queue: dequeue(segment)
+ConsumerN -> Main: partial result
+@enduml
+```
+
 ## License
 
 This project is licensed under the MIT License. Feel free to use and modify.
