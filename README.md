@@ -52,6 +52,9 @@ python pi.py -i 1000000 --pool 8
 | `--with-thread`      | Use producer–consumer threading                                       |
 | `--with-process`     | Use producer–consumer multiprocessing                                 |
 | `--pool`             | Use multiprocessing pool (specify number of workers)                  |
+| `--hosts`            | Comma-separated list of remote hosts (requires `-s` and `--seg-size`) |
+| `-s`, `--segments`   | Number of segments for manual or distributed mode                     |
+| `--seg-size`         | Size of each segment (for manual or distributed mode)                 |
 
 ## Architecture
 
@@ -70,6 +73,55 @@ ConsumerN -> Queue: dequeue(segment)
 ConsumerN -> Main: partial result
 @enduml
 ```
+
+Here are some thoughts for the calculation with multiple hosts
+
+```plantuml
+@startuml
+participant Master
+participant Host1
+participant Host2
+
+== Aufteilen der Arbeit ==
+Master -> Master : Berechne chunk = iterations / 2
+Master -> Master : host_segments = [(host1,0,chunk),(host2,chunk,iterations)]
+
+== Aufrufen von Host1 ==
+Master -> Host1 : ssh host1 "python3 pi.py --start 0 --end chunk"
+activate Host1
+Host1 -> Host1 : compute_segment(0, chunk) × 4
+Host1 --> Master : partial1
+deactivate Host1
+
+== Aufrufen von Host2 ==
+Master -> Host2 : ssh host2 "python3 pi.py --start chunk --end iterations"
+activate Host2
+Host2 -> Host2 : compute_segment(chunk, iterations) × 4
+Host2 --> Master : partial2
+deactivate Host2
+
+== Ergebnis aggregieren ==
+Master -> Master : total = partial1 + partial2
+Master -> Master : error = |π – total|
+Master --> Master : Ausgabe: π ≈ total, Error, Time elapsed
+@enduml
+
+
+```
+
+## Evaluation-Grid
+| Features                                                    | Punkte | Erfüllt | Geschätzte Punkte | Comment |
+|-------------------------------------------------------------|:------:|:-------:|:-----------------:|:-------:|
+| calc pi with k GIL threads                                  |  3.5   |  Ja     |  3.5              |         |
+| calc pi with k parallel (non-GIL) threads                   |  0.2   |  Ja     |  0.2              |         |
+| calc pi with k processes                                    |  0.2   |  Ja     |  0.2              |         |
+| producer/consumer architecture                              |  0.5   |  Ja     |  0.5              |         |
+| producer/consumer architecture mit map/filter/reduce        |  0.5   |  Ja     |  0.5              |         |
+| using a thread pool                                         |  0.2   |  Ja     |  0.2              |         |
+| timing and error data                                       |  0.2   |  Ja     |  0.2              |Wird immer ausgegeben|
+| calc pi with k processes on n hosts                         |  1.0   |Teilweise|  0.2              |Konnte nicht getestet getestet werden.|
+| complete set of image/sketch for architecture               |  0.2   |  Ja     |  0.2              |Plantuml in README.md|
+| Documentation API                                           |  0.2   |  Ja     |  0.2              |README.md|
 
 ## License
 

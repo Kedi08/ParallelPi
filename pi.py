@@ -5,6 +5,8 @@ import queue
 import time
 import math
 import os
+import subprocess
+import sys
 
 
 def compute_segment(start: int, end: int) -> float:
@@ -125,6 +127,58 @@ def run_pool(iterations: int, pool_size: int) -> float:
         results = pool.starmap(compute_segment, segments)
     return 4 * sum(results)
 
+def run_local_segment(start: int, end: int):
+    """Compute a single segment and print only the partial result."""
+    partial = 4 * compute_segment(start, end)
+    print(f"π ≈ {partial}")
+    return
+
+
+def distribute_across_hosts(iterations: int, hosts: list):
+    """
+    Split the range [0, iterations) into len(hosts) segments,
+    SSH to each host to compute its chunk, collect and sum the partial results.
+    """
+    n_hosts = len(hosts)
+    chunk = iterations // n_hosts
+    host_segments = []
+    for idx, host in enumerate(hosts):
+        start = idx * chunk
+        end = start + chunk if idx < n_hosts - 1 else iterations
+        host_segments.append((host, start, end))
+
+    total = 0.0
+    for host, start, end in host_segments:
+        # Build the SSH command. Assumes that 'pi.py' is available in PATH or in the
+        # same directory on the remote host, and that 'python3' is installed.
+        # We pass --start and --end to make the remote compute only that segment.
+        cmd = [
+            "ssh",
+            host,
+            "python3",
+            "pi.py",
+            "--start",
+            str(start),
+            "--end",
+            str(end),
+        ]
+        try:
+            output = subprocess.check_output(cmd, stderr=subprocess.PIPE, text=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error on host {host}: {e.stderr.strip()}", file=sys.stderr)
+            sys.exit(1)
+
+        # Parse the first line: "π ≈ {partial_value}"
+        first_line = output.strip().splitlines()[0]
+        try:
+            partial_val = float(first_line.split("≈")[1].strip())
+        except Exception as e:
+            print(f"Failed to parse output from host {host}: '{first_line}'", file=sys.stderr)
+            sys.exit(1)
+
+        total += partial_val
+
+    return total
 
 def main():
     parser = argparse.ArgumentParser(description="Parallel PI Calculator")
@@ -141,10 +195,31 @@ def main():
     parser.add_argument('--pool', type=int, help="use multiprocessing pool")
     parser.add_argument('-s', '--segments', type=int, help="number of segments for host mode or manual segment mode")
     parser.add_argument('--seg-size', type=int, help="size of each segment")
+    parser.add_argument('--hosts', type=str, help="comma-separated list of hosts for distributed computation")
+    parser.add_argument('--start', type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--end', type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     start_time = time.time()
-    if args.with_gil:
+     # If --start and --end are provided, this instance is acting as a worker for a single segment.
+    if args.start is not None and args.end is not None:
+        run_local_segment(args.start, args.end)
+        return
+
+    # Distributed mode across multiple hosts
+    elif args.hosts:
+        if not args.iterations:
+            parser.error("When using --hosts, you must also specify -i / --iterations.")
+        hosts = args.hosts.split(',')
+        start_time = time.time()
+        result = distribute_across_hosts(args.iterations, hosts)
+        elapsed = time.time() - start_time
+        error = abs(math.pi - result)
+        print(f"π ≈ {result}")
+        print(f"Error = {error}")
+        print(f"Time elapsed: {elapsed:.4f}s")
+        return
+    elif args.with_gil:
         result = run_gil_threads(args.iterations, args.threads)
     elif args.with_thread:
         result = run_producer_consumer_threads(args.iterations, args.threads)
